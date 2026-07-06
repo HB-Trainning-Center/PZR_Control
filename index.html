@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>가압기 압력·수위 제어 마스터</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+:root{
+  --bg:#080b12;
+  --panel:#111a2b;
+  --panel-2:#18233b;
+  --raise:#1e2c47;
+  --line:#273650;
+  --txt:#e9eef8;
+  --muted:#8296b4;
+  --dim:#5a6c8c;
+  --water:#35d0ff;   /* 수위 (Level) */
+  --heat:#ff9042;    /* 압력 (Pressure) */
+  --good:#22e39a;    /* 밴드 내 */
+  --alarm:#ff3d55;   /* 경보 */
+  --gold:#ffd23f;    /* 콤보/점수 */
+  --shadow:0 12px 30px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+html,body{height:100%;overflow:hidden;}
+body{
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #12203a 0%, transparent 60%),
+    var(--bg);
+  color:var(--txt);
+  font-family:"Pretendard",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+  width:100vw;height:100vh;display:flex;flex-direction:column;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono","SFMono-Regular",monospace;font-variant-numeric:tabular-nums;}
+.up{color:var(--heat);} .dn{color:var(--water);}
+
+/* ---------- 오버레이(로그인/레벨/결과/랭킹) ---------- */
+.overlay{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;padding:26px;text-align:center;
+  background:radial-gradient(900px 500px at 50% 0%, #14243f 0%, var(--bg) 70%);
+  overflow-y:auto;}
+.eyebrow{font-size:11px;letter-spacing:.32em;color:var(--dim);font-weight:700;margin-bottom:14px;}
+.overlay h1{font-size:27px;font-weight:800;line-height:1.25;letter-spacing:-.01em;margin-bottom:8px;}
+.overlay h1 .accent{color:var(--heat);}
+.lead{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:26px;max-width:340px;}
+.brief-card{width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);
+  border-radius:16px;padding:16px 18px;margin-bottom:22px;text-align:left;}
+.brief-card .row{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#cdd8ec;line-height:1.6;padding:5px 0;}
+.brief-card .k{color:var(--gold);font-weight:700;min-width:52px;}
+.input-name{width:100%;max-width:340px;padding:15px 16px;font-size:17px;border-radius:13px;
+  border:1px solid var(--line);background:var(--panel-2);color:#fff;text-align:center;outline:none;
+  transition:border-color .2s, box-shadow .2s;margin-bottom:16px;}
+.input-name:focus{border-color:var(--heat);box-shadow:0 0 0 3px rgba(255,144,66,.15);}
+.btn-primary{width:100%;max-width:340px;padding:16px;font-size:17px;font-weight:800;border:none;border-radius:13px;
+  color:#0b1220;background:linear-gradient(180deg,#ffb45f,#ff8a2e);box-shadow:0 8px 20px rgba(255,138,46,.28);
+  transition:transform .08s, filter .15s;cursor:pointer;}
+.btn-primary:active{transform:scale(.98);filter:brightness(1.05);}
+.btn-ghost{width:100%;max-width:340px;padding:13px;font-size:14px;font-weight:700;border-radius:12px;
+  color:var(--muted);background:transparent;border:1px solid var(--line);margin-top:12px;transition:transform .08s;}
+.btn-ghost:active{transform:scale(.98);}
+.conn-badge{margin-top:16px;font-size:11px;color:var(--dim);letter-spacing:.04em;}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+.dot.on{background:var(--good);box-shadow:0 0 8px var(--good);} .dot.off{background:var(--dim);}
+
+/* ---------- 레벨 인트로 ---------- */
+.lv-chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:7px 16px;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:16px;}
+.lv-chip b{color:var(--heat);font-family:"IBM Plex Mono",monospace;}
+.step-dots{display:flex;gap:6px;justify-content:center;margin-top:8px;}
+.step-dots i{width:26px;height:4px;border-radius:2px;background:var(--line);}
+.step-dots i.done{background:var(--good);} .step-dots i.cur{background:var(--heat);}
+
+/* ---------- 결과/랭킹 ---------- */
+.final-score{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:56px;color:var(--gold);
+  text-shadow:0 0 30px rgba(255,210,63,.3);margin:4px 0 2px;letter-spacing:-.02em;}
+.stars{font-size:30px;letter-spacing:6px;margin:10px 0 4px;}
+.grade-badge{font-family:"IBM Plex Mono",monospace;font-size:44px;font-weight:700;line-height:1;}
+.eval{font-size:14px;color:#cdd8ec;line-height:1.6;max-width:330px;margin:14px 0 4px;}
+.board{width:100%;max-width:360px;margin:18px 0;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;}
+.board-head{padding:11px 16px;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.05em;
+  border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+.board-row{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:10px 16px;
+  font-size:13px;border-bottom:1px solid rgba(39,54,80,.5);}
+.board-row:last-child{border-bottom:none;}
+.board-row .rk{font-family:"IBM Plex Mono",monospace;font-weight:700;color:var(--dim);text-align:center;}
+.board-row.me{background:linear-gradient(90deg, rgba(255,144,66,.12), transparent);}
+.board-row.me .nm{color:var(--heat);font-weight:800;}
+.board-row .rk.g1{color:#ffd23f;} .board-row .rk.g2{color:#cfd8e6;} .board-row .rk.g3{color:#e0a878;}
+.board-row .sc{font-family:"IBM Plex Mono",monospace;font-weight:700;color:var(--gold);}
+.board-empty{padding:22px 16px;font-size:12.5px;color:var(--dim);}
+
+/* ---------- 메인 앱 ---------- */
+#app{display:none;flex-direction:column;height:100%;width:100%;}
+.hud{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 14px;background:linear-gradient(180deg,#131e33,#0e1728);border-bottom:1px solid var(--line);}
+.hud-left{display:flex;align-items:center;gap:10px;min-width:0;}
+.hud-name{font-size:13px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px;}
+.hud-lv{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:3px 9px;white-space:nowrap;}
+.hud-lv b{color:var(--heat);font-family:"IBM Plex Mono",monospace;}
+.hud-right{display:flex;align-items:center;gap:12px;}
+.hud-timer{font-family:"IBM Plex Mono",monospace;font-size:15px;font-weight:600;color:var(--muted);}
+.hud-timer.warn{color:var(--alarm);}
+.hud-score{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:700;color:var(--gold);}
+
+/* 진행 타임바 */
+.timebar{height:3px;background:var(--panel);position:relative;overflow:hidden;}
+.timebar > i{position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,var(--heat),var(--gold));transition:width .1s linear;}
+
+/* 어넌시에이터 스트립 */
+.annun{display:flex;align-items:stretch;gap:8px;padding:8px 12px;background:var(--bg);}
+.annun-status{flex:1;display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;font-size:12px;font-weight:700;color:var(--muted);transition:all .2s;}
+.annun-status .led{width:11px;height:11px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .15s;}
+.annun-status.inband{border-color:rgba(34,227,154,.5);color:var(--good);}
+.annun-status.inband .led{background:var(--good);box-shadow:0 0 10px var(--good);}
+.annun-status.alarm{border-color:var(--alarm);color:var(--alarm);background:rgba(255,61,85,.08);}
+.annun-status.alarm .led{background:var(--alarm);box-shadow:0 0 12px var(--alarm);animation:blink .5s steps(1) infinite;}
+@keyframes blink{50%{opacity:.25;}}
+.combo-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:11px;padding:6px 14px;min-width:92px;transition:all .15s;}
+.combo-chip.hot{border-color:var(--gold);box-shadow:0 0 14px rgba(255,210,63,.25);}
+.combo-chip .cval{font-family:"IBM Plex Mono",monospace;font-size:18px;font-weight:700;color:var(--gold);line-height:1;}
+.combo-chip .clbl{font-size:9px;font-weight:700;color:var(--dim);letter-spacing:.08em;margin-top:3px;}
+.combo-meter{height:3px;width:100%;background:var(--line);border-radius:2px;margin-top:5px;overflow:hidden;}
+.combo-meter > i{display:block;height:100%;width:0%;background:var(--gold);transition:width .1s;}
+
+/* 계기 클러스터 */
+.gauges{display:flex;gap:10px;padding:6px 12px 4px;}
+.gauge{flex:1;background:linear-gradient(180deg,var(--panel),#0e1626);border:1px solid var(--line);
+  border-radius:16px;padding:10px 8px 12px;text-align:center;transition:border-color .2s, box-shadow .2s;position:relative;overflow:hidden;}
+.gauge.alarm{border-color:var(--alarm);box-shadow:0 0 0 1px var(--alarm), 0 0 18px rgba(255,61,85,.2);}
+.gauge .dial{width:100%;height:auto;display:block;}
+.gauge .readout{margin-top:-14px;}
+.rd-val{font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:700;line-height:1;letter-spacing:-.02em;transition:color .15s;}
+.rd-unit{font-size:9.5px;color:var(--dim);font-weight:600;margin-top:2px;letter-spacing:.05em;}
+.gauge-name{font-size:11px;font-weight:800;letter-spacing:.03em;margin-top:8px;}
+.gauge-name.p{color:var(--heat);} .gauge-name.l{color:var(--water);}
+.gauge-target{font-size:10px;color:var(--dim);margin-top:2px;}
+.gauge-target .mono{color:var(--muted);}
+
+/* 트렌드 레코더 */
+.trend-wrap{flex-grow:1;min-height:78px;margin:2px 12px 6px;position:relative;
+  background:#060a11;border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.trend-hdr{position:absolute;top:7px;left:11px;right:11px;display:flex;justify-content:space-between;
+  font-size:10px;font-weight:700;z-index:3;pointer-events:none;}
+.trend-hdr .lg{display:flex;gap:12px;}
+.trend-hdr .lg span{display:flex;align-items:center;gap:5px;color:var(--muted);}
+.trend-hdr .lg i{width:14px;height:3px;border-radius:2px;}
+.trend-hdr .scale{color:var(--dim);}
+canvas{width:100%;height:100%;display:block;}
+
+/* 제어 데크 */
+.deck{background:linear-gradient(180deg,#16213a,#0f1830);border-top:1px solid var(--line);
+  border-radius:20px 20px 0 0;padding:12px 14px;padding-bottom:max(12px,env(safe-area-inset-bottom));box-shadow:0 -10px 24px rgba(0,0,0,.35);}
+.deck-title{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--dim);text-align:center;margin-bottom:9px;}
+.htr-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.htr-lbl{font-size:10px;font-weight:800;color:var(--muted);writing-mode:vertical-lr;text-orientation:mixed;letter-spacing:.06em;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 4px;}
+.htr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;flex:1;}
+.btn-htr{padding:14px 0;background:var(--raise);border:1px solid var(--line);border-radius:10px;color:var(--dim);
+  font-size:13px;font-weight:800;font-family:"IBM Plex Mono",monospace;transition:all .1s;cursor:pointer;position:relative;}
+.btn-htr .st{display:block;font-size:8px;font-weight:700;color:var(--dim);margin-top:2px;letter-spacing:.06em;}
+.btn-htr.on{background:linear-gradient(180deg,#ff7a3a,#e8481f);border-color:#ff9a5c;color:#fff;box-shadow:0 0 14px rgba(255,90,30,.45);}
+.btn-htr.on .st{color:#ffd9c4;}
+.btn-htr.dead{opacity:.4;background:repeating-linear-gradient(45deg,#1a2438,#1a2438 5px,#141d30 5px,#141d30 10px);}
+.ctrl-row{display:flex;gap:10px;}
+.ctrl{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:9px 10px;}
+.ctrl-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+.ctrl-name{font-size:11px;font-weight:800;}
+.ctrl-name.c{color:var(--water);} .ctrl-name.s{color:var(--heat);}
+.ctrl-val{font-family:"IBM Plex Mono",monospace;font-size:15px;font-weight:700;}
+.ctrl-btns{display:flex;gap:7px;}
+.btn-adj{flex:1;padding:12px 0;background:var(--raise);border:1px solid var(--line);border-radius:9px;color:#fff;
+  font-size:17px;font-weight:800;transition:all .08s;cursor:pointer;}
+.btn-adj:active{background:#2a3a5c;transform:scale(.94);}
+.slider{height:5px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden;}
+.slider > i{display:block;height:100%;width:50%;border-radius:3px;transition:width .12s;}
+.slider.c > i{background:var(--water);} .slider.s > i{background:var(--heat);}
+
+/* 이벤트 모달 */
+.modal{position:absolute;inset:0;z-index:200;display:none;justify-content:center;align-items:center;padding:24px;
+  background:rgba(5,8,15,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.modal-box{width:100%;max-width:340px;background:linear-gradient(180deg,#1a2438,#121a2b);
+  border:1px solid var(--alarm);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:var(--shadow);
+  animation:pop .22s cubic-bezier(.2,1.3,.5,1);}
+@keyframes pop{from{transform:scale(.85);opacity:0;}}
+.modal-tag{font-size:10px;font-weight:800;letter-spacing:.2em;color:var(--alarm);margin-bottom:6px;}
+.modal-title{font-size:20px;font-weight:800;margin-bottom:12px;}
+.modal-title.out{color:var(--water);} .modal-title.in{color:var(--heat);}
+.modal-desc{font-size:13.5px;color:#cdd8ec;line-height:1.65;}
+.modal-desc b{font-weight:700;}
+.modal-btn{margin-top:18px;width:100%;padding:14px;font-size:16px;font-weight:800;border:none;border-radius:12px;
+  color:#0b1220;background:linear-gradient(180deg,#5fd6ff,#2ab6ef);transition:transform .08s;cursor:pointer;}
+.modal-btn:active{transform:scale(.97);}
+
+/* 플로팅 피드백(점수 팝업 / 토스트) */
+#fx{position:absolute;inset:0;z-index:150;pointer-events:none;overflow:hidden;}
+.pop{position:absolute;font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:15px;
+  animation:floatUp 1s ease-out forwards;text-shadow:0 2px 6px rgba(0,0,0,.6);}
+@keyframes floatUp{0%{opacity:0;transform:translateY(6px) scale(.9);}15%{opacity:1;}100%{opacity:0;transform:translateY(-46px) scale(1.05);}}
+.toast{position:absolute;left:50%;top:14%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;
+  background:rgba(18,26,43,.95);border:1px solid var(--gold);border-radius:999px;padding:9px 18px;
+  font-size:13px;font-weight:800;color:var(--gold);white-space:nowrap;box-shadow:var(--shadow);
+  animation:toastIn .3s ease-out, toastOut .3s ease-in 2s forwards;}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-12px);}}
+@keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-12px);}}
+
+/* 경보 화면 플래시 */
+#flash{position:absolute;inset:0;z-index:140;pointer-events:none;box-shadow:inset 0 0 0 3px var(--alarm), inset 0 0 60px rgba(255,61,85,.25);opacity:0;transition:opacity .25s;}
+#flash.on{opacity:1;}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001s!important;transition-duration:.001s!important;}
+}
+@media (max-height:680px){
+  .rd-val{font-size:26px;} .final-score{font-size:46px;}
+}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="loginScreen">
+  <div class="eyebrow">KHNP · 한빛 MCR 양성훈련</div>
+  <h1>가압기 <span class="accent">압력·수위</span> 제어 마스터</h1>
+  <p class="lead">부하 변동에 따른 유출·유입 서지를 실시간으로 제압하고, 압력과 수위를 목표 밴드 안에서 유지하십시오.</p>
+
+  <div class="brief-card">
+    <div class="row"><span class="k">목표</span><span>압력 <b class="mono">157.0</b> kg/cm² · 수위 <b class="mono">60.0</b>%</span></div>
+    <div class="row"><span class="k">제어</span><span>전열기 4군 · 충전유량 · 살수</span></div>
+    <div class="row"><span class="k">진행</span><span>3개 레벨 · 밴드 유지 시 콤보 가산</span></div>
+    <div class="row"><span class="k">채점</span><span>밴드 내 유지율 · 최대편차 · 무경보</span></div>
+  </div>
+
+  <input type="text" id="userName" class="input-name" placeholder="이름 (리더보드 등록)">
+  <button class="btn-primary" onclick="startGame()">훈련 시작</button>
+  <button class="btn-ghost" onclick="showBoardOnly()">🏆 순위 보기</button>
+  <div class="conn-badge"><span class="dot off" id="connDot"></span><span id="connTxt">서버 연결 확인 중…</span></div>
+</div>
+
+<div class="overlay" id="levelScreen" style="display:none;">
+  <div class="lv-chip">LEVEL <b id="lvNum">1</b> / 3</div>
+  <h1 id="lvName" style="font-size:24px;">부하 증가 과도</h1>
+  <div class="step-dots" id="lvDots"></div>
+  <div class="brief-card" style="margin-top:22px;">
+    <div class="row"><span class="k">제한</span><span id="lvDur">45초 유지</span></div>
+    <div class="row"><span class="k">밴드</span><span id="lvBand">압력 ±3.0 · 수위 ±4.0</span></div>
+    <div class="row"><span class="k">개요</span><span id="lvBrief"></span></div>
+  </div>
+  <button class="btn-primary" onclick="beginLevel()">진입</button>
+</div>
+
+<div class="overlay" id="lvResultScreen" style="display:none;">
+  <div class="eyebrow" id="lvrTag">LEVEL 1 CLEAR</div>
+  <div class="grade-badge" id="lvrGrade">A</div>
+  <div class="stars" id="lvrStars">★★☆</div>
+  <div class="final-score" style="font-size:40px;" id="lvrScore">0</div>
+  <div class="eval" id="lvrDetail"></div>
+  <button class="btn-primary" id="lvrNext" onclick="nextLevel()">다음 레벨</button>
+</div>
+
+<div class="overlay" id="finalScreen" style="display:none;">
+  <div class="eyebrow">FINAL EVALUATION</div>
+  <div class="stars" id="finStars">★★★</div>
+  <div class="final-score" id="finalScore">0</div>
+  <div class="eval" id="evalMsg"></div>
+  <div class="board" id="boardWrap">
+    <div class="board-head"><span>🏆 리더보드</span><span id="boardMode" style="font-weight:600;color:var(--dim);"></span></div>
+    <div id="boardBody"><div class="board-empty">불러오는 중…</div></div>
+  </div>
+  <button class="btn-primary" onclick="location.reload()">다시 도전</button>
+</div>
+
+<div class="overlay" id="boardOnlyScreen" style="display:none;">
+  <div class="eyebrow">LEADERBOARD</div>
+  <h1 style="font-size:22px;margin-bottom:18px;">🏆 전체 순위</h1>
+  <div class="board" id="boardWrap2">
+    <div class="board-head"><span>순위</span><span id="boardMode2" style="font-weight:600;color:var(--dim);"></span></div>
+    <div id="boardBody2"><div class="board-empty">불러오는 중…</div></div>
+  </div>
+  <button class="btn-ghost" onclick="location.reload()">뒤로</button>
+</div>
+
+<div class="modal" id="eventModal">
+  <div class="modal-box">
+    <div class="modal-tag">TRANSIENT · 과도 발생</div>
+    <div class="modal-title" id="mTitle"></div>
+    <div class="modal-desc" id="mDesc"></div>
+    <button class="modal-btn" onclick="closeModal()">대응 개시</button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="hud">
+    <div class="hud-left">
+      <span class="hud-name" id="dispName">훈련생</span>
+      <span class="hud-lv">LV <b id="hudLv">1</b></span>
+    </div>
+    <div class="hud-right">
+      <span class="hud-timer" id="valT">0.0s</span>
+      <span class="hud-score">🏆 <span id="valS">0</span></span>
+    </div>
+  </div>
+  <div class="timebar"><i id="timeFill"></i></div>
+
+  <div class="annun">
+    <div class="annun-status" id="annun"><span class="led"></span><span id="annunTxt">계통 정상 · 밴드 유지</span></div>
+    <div class="combo-chip" id="comboChip">
+      <span class="cval" id="comboVal">×1.0</span>
+      <span class="clbl">COMBO</span>
+      <span class="combo-meter"><i id="comboFill"></i></span>
+    </div>
+  </div>
+
+  <div class="gauges">
+    <div class="gauge" id="gaugeP">
+      <svg class="dial" id="dialP" viewBox="0 0 200 132" aria-hidden="true"></svg>
+      <div class="readout"><div class="rd-val" id="valP">157.0</div><div class="rd-unit">kg/cm²</div></div>
+      <div class="gauge-name p">압력 · PRESSURE</div>
+      <div class="gauge-target">목표 <span class="mono">157.0</span> · 밴드 <span class="mono" id="bandP">±3.0</span></div>
+    </div>
+    <div class="gauge" id="gaugeL">
+      <svg class="dial" id="dialL" viewBox="0 0 200 132" aria-hidden="true"></svg>
+      <div class="readout"><div class="rd-val" id="valL">60.0</div><div class="rd-unit">% LEVEL</div></div>
+      <div class="gauge-name l">수위 · LEVEL</div>
+      <div class="gauge-target">목표 <span class="mono">60.0</span> · 밴드 <span class="mono" id="bandL">±4.0</span></div>
+    </div>
+  </div>
+
+  <div class="trend-wrap">
+    <div class="trend-hdr">
+      <div class="lg">
+        <span><i style="background:var(--heat)"></i>압력</span>
+        <span><i style="background:var(--water)"></i>수위</span>
+      </div>
+      <div class="scale">밴드 배수(±1=밴드) · 자동 축척</div>
+    </div>
+    <canvas id="trendCanvas"></canvas>
+  </div>
+
+  <div class="deck">
+    <div class="deck-title">R E A C T O R   C O O L A N T   —   가압기 제어반</div>
+    <div class="htr-row">
+      <div class="htr-lbl">전열기</div>
+      <div class="htr-grid">
+        <button class="btn-htr" id="h1" onclick="toggleHtr(1)">H1<span class="st">OFF</span></button>
+        <button class="btn-htr" id="h2" onclick="toggleHtr(2)">H2<span class="st">OFF</span></button>
+        <button class="btn-htr" id="h3" onclick="toggleHtr(3)">H3<span class="st">OFF</span></button>
+        <button class="btn-htr" id="h4" onclick="toggleHtr(4)">H4<span class="st">OFF</span></button>
+      </div>
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl">
+        <div class="ctrl-top"><span class="ctrl-name c">충전유량</span><span class="ctrl-val dn"><span id="valFlow">50</span>%</span></div>
+        <div class="ctrl-btns">
+          <button class="btn-adj" onclick="adjFlow(-5)">−</button>
+          <button class="btn-adj" onclick="adjFlow(5)">＋</button>
+        </div>
+        <div class="slider c"><i id="flowBar"></i></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-top"><span class="ctrl-name s">살수 (Spray)</span><span class="ctrl-val up"><span id="valSpray">0</span>%</span></div>
+        <div class="ctrl-btns">
+          <button class="btn-adj" onclick="adjSpray(-10)">−</button>
+          <button class="btn-adj" onclick="adjSpray(10)">＋</button>
+        </div>
+        <div class="slider s"><i id="sprayBar"></i></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="flash"></div>
+<div id="fx"></div>
+
+<script>
+/* ================== 설정 ================== */
+// ▼▼▼ Firebase 콘솔 > 프로젝트 설정 > 웹 앱 config 를 붙여넣으십시오. ▼▼▼
+//     databaseURL 은 Realtime Database 사용 시 반드시 포함되어야 합니다.
+//     미입력(YOUR_...) 상태면 자동으로 '오프라인(세션) 모드' 로 동작합니다.
+const firebaseConfig = {
+  apiKey: "AIzaSyCmqeL1TnBaEnXhoCrXJgSC1YaICqwNKww",
+  authDomain: "pzrcontrol.firebaseapp.com",
+  databaseURL: "https://pzrcontrol-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "pzrcontrol",
+  storageBucket: "pzrcontrol.firebasestorage.app",
+  messagingSenderId: "25666233598",
+  appId: "1:25666233598:web:1fc32c49ef6740b55f71af"
+};
+const LB_PATH = "pzr_leaderboard_v2"; // 리더보드 저장 경로
+/* ========================================= */
+
+// --- 상수 ---
+const TICK = 0.1;                 // s
+const TARGET_P = 157.0, TARGET_L = 60.0;
+const P_DRIFT  = -0.04;           // /tick  (열손실: 최소 1군 가동 필요)
+const HTR_RATE =  0.04;           // /tick  per ON 그룹 (압력 상승)
+const SPRAY_RATE = 0.003;         // /tick  per %개도 (압력 하강)
+const CHG_RATE = 0.0011;          // /tick  per (개도−50) (수위 상승)
+const SURGE_APPLY = 0.08;         // 서지(과도) 완만 적용률 — 계단변화를 수 초에 걸쳐 반영
+
+const LEVELS = [
+  { id:1, name:"부하 증가 과도", dur:45, bandP:3.0, bandL:4.0, noise:0, disableH4:false,
+    brief:"단일 부하 증가로 인한 냉각·수축 과도. 유출서지에 대응하여 안정화합니다.",
+    events:[ {t:8, dir:"out", dP:-8, dL:-10, title:"증기유량 +10%",
+              desc:"부하 증가 → RCS 냉각·수축 → <b class='dn'>가압기 유출서지(outsurge)</b>.<br>압력·수위 <b class='dn'>강하</b>. <b>전열기 가동 + 충전유량 증가</b>로 회복하십시오."} ] },
+  { id:2, name:"연속 부하 변동", dur:55, bandP:2.5, bandL:3.5, noise:0.008, disableH4:false,
+    brief:"증가 후 감소가 연속되는 양방향 과도. 살수·전열기·충전을 전환 운전합니다.",
+    events:[ {t:6, dir:"out", dP:-8, dL:-10, title:"증기유량 +10%",
+              desc:"냉각·수축 → <b class='dn'>유출서지</b>. 압력·수위 <b class='dn'>강하</b>.<br><b>전열기·충전 증가</b>로 회복."},
+             {t:30, dir:"in", dP:8, dL:10, title:"증기유량 −10%",
+              desc:"가열·팽창 → <b class='up'>가압기 유입서지(insurge)</b>. 압력·수위 <b class='up'>상승</b>.<br><b>살수 가동 + 충전유량 감소</b>로 회복."} ] },
+  { id:3, name:"급속 과도 · 전열기 1군 정비", dur:60, bandP:2.0, bandL:3.0, noise:0.016, disableH4:true,
+    brief:"H4 전열기군 정비 중(사용 불가). 대규모 급속 과도를 3개 군만으로 제압합니다.",
+    events:[ {t:5,  dir:"out", dP:-11, dL:-13, title:"증기유량 +15% (급속)",
+              desc:"급속 냉각·수축 → 대규모 <b class='dn'>유출서지</b>. 즉시 회복 조작 개시."},
+             {t:32, dir:"in", dP:11, dL:13, title:"증기유량 −15% (급속)",
+              desc:"급속 가열·팽창 → 대규모 <b class='up'>유입서지</b>. 살수 최대 활용."} ] },
+];
+
+/* ================== 상태 ================== */
+let db=null, ONLINE=false, localBoard=[];
+let userName="훈련생";
+let lvIndex=0, totalScore=0, levelResults=[];
+let unlockedAchv={};
+
+// 라운드 상태
+let running=false, paused=false, simTimer=null;
+let cfg=null, t=0, roundScore=0;
+let P=TARGET_P, L=TARGET_L, flow=50, spray=0, htrs=[false,false,false,false];
+let events=[], firedCount=0;
+let inBandTicks=0, totalTicks=0, combo=0, comboMult=1, alarmCount=0, wasAlarm=false;
+let maxDevP=0, maxDevL=0, lastAlarmTime=-99, recoveredFast=false, comboFlash=false;
+let noiseP=0, noiseL=0, surgeP=0, surgeL=0, trendScale=2;
+
+/* ================== Firebase ================== */
+(function initFB(){
+  try{
+    const ok = typeof firebase!=="undefined" && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("YOUR_");
+    if(ok){ firebase.initializeApp(firebaseConfig); db=firebase.database(); ONLINE=true; }
+  }catch(e){ ONLINE=false; }
+  const dot=document.getElementById("connDot"), txt=document.getElementById("connTxt");
+  if(ONLINE){ dot.className="dot on"; txt.textContent="온라인 · 리더보드 연결됨"; }
+  else{ dot.className="dot off"; txt.textContent="오프라인 · 세션 순위만 기록"; }
+})();
+
+async function submitScore(entry){
+  if(ONLINE && db){ try{ await db.ref(LB_PATH).push(entry); }catch(e){ ONLINE=false; } }
+  localBoard.push(entry);
+}
+async function fetchBoard(){
+  if(ONLINE && db){
+    try{
+      const snap=await db.ref(LB_PATH).orderByChild("score").limitToLast(40).once("value");
+      const arr=[]; snap.forEach(c=>{ arr.push(c.val()); });
+      arr.sort((a,b)=>b.score-a.score);
+      return arr.slice(0,15);
+    }catch(e){ ONLINE=false; }
+  }
+  return [...localBoard].sort((a,b)=>b.score-a.score).slice(0,15);
+}
+function renderBoard(list, bodyEl, modeEl){
+  modeEl.textContent = ONLINE ? "ONLINE" : "SESSION";
+  if(!list.length){ bodyEl.innerHTML='<div class="board-empty">아직 기록이 없습니다. 첫 기록의 주인공이 되어 보십시오.</div>'; return; }
+  bodyEl.innerHTML = list.map((e,i)=>{
+    const rk=i+1, g=rk<=3?("g"+rk):"";
+    const me=(e.name===userName && e.ts===window.__myTs)?"me":"";
+    const nm=(e.name||"익명").replace(/[<>&]/g,"");
+    return `<div class="board-row ${me}">
+      <span class="rk ${g}">${rk<=3?["🥇","🥈","🥉"][rk-1]:rk}</span>
+      <span class="nm">${nm} <span style="color:var(--dim);font-size:11px;">L${e.level||1}</span></span>
+      <span class="sc">${(e.score||0).toLocaleString()}</span></div>`;
+  }).join("");
+}
+
+/* ================== 오디오 / 햅틱 ================== */
+let audioCtx=null;
+function initAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); }catch(e){} }
+function beep(freq,dur,type="sine",vol=0.18){
+  if(!audioCtx) return;
+  try{ const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type=type; o.frequency.value=freq; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(vol,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+dur);
+    o.start(); o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function vibrate(p){ if(navigator.vibrate) navigator.vibrate(p); }
+
+/* ================== 화면 전환 ================== */
+function show(id){ document.getElementById(id).style.display="flex"; }
+function hide(id){ document.getElementById(id).style.display="none"; }
+
+document.getElementById("userName").addEventListener("keypress",e=>{ if(e.key==="Enter") startGame(); });
+
+function startGame(){
+  initAudio();
+  const v=document.getElementById("userName").value.trim();
+  userName = v!=="" ? v.slice(0,14) : "훈련생";
+  document.getElementById("dispName").textContent=userName;
+  lvIndex=0; totalScore=0; levelResults=[]; unlockedAchv={};
+  buildDial("dialP"); buildDial("dialL");
+  hide("loginScreen"); showLevelIntro();
+}
+
+async function showBoardOnly(){
+  hide("loginScreen"); show("boardOnlyScreen");
+  const list=await fetchBoard();
+  renderBoard(list, document.getElementById("boardBody2"), document.getElementById("boardMode2"));
+}
+
+function showLevelIntro(){
+  cfg=LEVELS[lvIndex];
+  document.getElementById("lvNum").textContent=cfg.id;
+  document.getElementById("lvName").textContent=cfg.name;
+  document.getElementById("lvDur").textContent=cfg.dur+"초 유지";
+  document.getElementById("lvBand").textContent=`압력 ±${cfg.bandP.toFixed(1)} · 수위 ±${cfg.bandL.toFixed(1)}`;
+  document.getElementById("lvBrief").textContent=cfg.brief;
+  document.getElementById("lvDots").innerHTML=LEVELS.map((_,i)=>{
+    const c=i<lvIndex?"done":(i===lvIndex?"cur":""); return `<i class="${c}"></i>`;
+  }).join("");
+  show("levelScreen");
+}
+
+/* ================== 라운드 진행 ================== */
+function beginLevel(){
+  hide("levelScreen"); show("app");
+  // 상태 초기화
+  running=true; paused=false; t=0; roundScore=0;
+  P=TARGET_P; L=TARGET_L; flow=50; spray=0; htrs=[false,false,false,false];
+  events=cfg.events.map(e=>({...e})); firedCount=0;
+  inBandTicks=0; totalTicks=0; combo=0; comboMult=1; alarmCount=0; wasAlarm=false;
+  maxDevP=0; maxDevL=0; lastAlarmTime=-99; recoveredFast=false;
+  historyData=[]; surgeP=0; surgeL=0; trendScale=2; noiseP=0; noiseL=0;
+  document.getElementById("hudLv").textContent=cfg.id;
+  document.getElementById("bandP").textContent="±"+cfg.bandP.toFixed(1);
+  document.getElementById("bandL").textContent="±"+cfg.bandL.toFixed(1);
+  // 전열기 버튼 전체 초기화 후 H4 정비 처리
+  [1,2,3,4].forEach(i=>{ const b=document.getElementById("h"+i); b.className="btn-htr"; b.disabled=false; b.querySelector(".st").textContent="OFF"; });
+  if(cfg.disableH4){ const h4=document.getElementById("h4"); h4.className="btn-htr dead"; h4.disabled=true; h4.querySelector(".st").textContent="정비"; }
+  resizeCanvas(); window.addEventListener("resize", resizeCanvas);
+  updateView();
+  simTimer=setInterval(loop, 100);
+}
+
+function showModal(ev){
+  paused=true;
+  document.getElementById("mTitle").textContent=ev.title;
+  document.getElementById("mTitle").className="modal-title "+(ev.dir==="out"?"out":"in");
+  document.getElementById("mDesc").innerHTML=ev.desc;
+  document.getElementById("eventModal").querySelector(".modal-box").style.borderColor = ev.dir==="out"?"var(--water)":"var(--heat)";
+  show("eventModal");
+  beep(360,0.5,"square",0.14); beep(300,0.5,"square",0.1); vibrate([90,60,90]);
+}
+function closeModal(){ hide("eventModal"); paused=false; }
+
+function loop(){
+  if(!running || paused) return;
+  t+=TICK;
+  document.getElementById("valT").textContent=t.toFixed(1)+"s";
+  const remain=cfg.dur-t;
+  document.getElementById("valT").classList.toggle("warn", remain<=8);
+  document.getElementById("timeFill").style.width=Math.min(100,(t/cfg.dur)*100)+"%";
+
+  // 이벤트 발생
+  for(const e of events){
+    if(!e.fired && t>=e.t){
+      e.fired=true; firedCount++;
+      surgeP+=e.dP; surgeL+=e.dL;   // 계단 즉시반영 대신 완만 서지로 누적
+      showModal(e);
+    }
+  }
+
+  if(t>=cfg.dur){ endLevel(); return; }
+  if(paused) return;
+
+  // 노이즈(고레벨 미세 외란)
+  if(cfg.noise>0){
+    noiseP += (Math.random()-0.5)*cfg.noise; noiseP*=0.9;
+    noiseL += (Math.random()-0.5)*cfg.noise*1.2; noiseL*=0.9;
+  } else { noiseP=0; noiseL=0; }
+
+  // 서지(과도) 완만 적용 — 급격한 계단변화를 수 초에 걸쳐 반영
+  const sp=surgeP*SURGE_APPLY; surgeP-=sp; P+=sp;
+  const sl=surgeL*SURGE_APPLY; surgeL-=sl; L+=sl;
+
+  // 물리
+  const hCount=htrs.filter(h=>h).length;
+  P += P_DRIFT + hCount*HTR_RATE - spray*SPRAY_RATE + noiseP;
+  L += (flow-50)*CHG_RATE + noiseL;
+
+  // 채점 / 콤보
+  const dP=Math.abs(P-TARGET_P), dL=Math.abs(L-TARGET_L);
+  maxDevP=Math.max(maxDevP,dP); maxDevL=Math.max(maxDevL,dL);
+  totalTicks++;
+  const inBand = dP<=cfg.bandP && dL<=cfg.bandL;
+
+  if(inBand){
+    inBandTicks++; combo++;
+    comboMult = Math.min(4, 1 + Math.floor(combo/20)*0.5);
+    const gain = Math.round(10*comboMult);
+    roundScore += gain;
+    // 콤보 레벨업 순간 보너스/피드백
+    if(combo%20===0){
+      roundScore += 50;
+      spawnPop("+50 COMBO", "var(--gold)");
+      beep(760+combo*2, 0.08, "triangle", 0.14); vibrate(18);
+      if(comboMult>=2 && !unlockedAchv.combo){ unlockedAchv.combo=true; achievement("🔥 콤보 마스터 · ×2 달성"); }
+    }
+    // 신속 안정: 마지막 경보 종료 후 빠르게 복귀
+    if(wasAlarm){ /* 경보→밴드 복귀 */ }
+  }else{
+    combo=0; comboMult=1;
+    roundScore -= (dP*0.6 + dL*0.5);
+  }
+
+  // 경보 상태(밴드 초과)
+  const alarmNow = dP>cfg.bandP || dL>cfg.bandL;
+  if(alarmNow && !wasAlarm){
+    alarmCount++; lastAlarmTime=t;
+    setFlash(true); beep(880,0.18,"sawtooth",0.13); vibrate([40,40,40]);
+  }
+  if(!alarmNow && wasAlarm){
+    setFlash(false);
+    if(t-lastAlarmTime<=8 && !recoveredFast){ recoveredFast=true; }
+    if(t-lastAlarmTime<=6 && !unlockedAchv.fast){ unlockedAchv.fast=true; achievement("⚡ 신속 안정 · 6초 내 복귀"); }
+  }
+  wasAlarm=alarmNow;
+
+  updateView();
+  drawTrend();
+}
+
+function setFlash(on){ document.getElementById("flash").classList.toggle("on", on); }
+
+/* ================== 조작 ================== */
+function adjFlow(v){ if(!running||paused) return; flow=Math.max(0,Math.min(100,flow+v)); beep(720,0.04,"sine",0.1); vibrate(14); updateControls(); }
+function adjSpray(v){ if(!running||paused) return; spray=Math.max(0,Math.min(100,spray+v)); beep(920,0.04,"sine",0.1); vibrate(14); updateControls(); }
+function toggleHtr(i){
+  if(!running||paused) return;
+  if(i===4 && cfg.disableH4) return;
+  htrs[i-1]=!htrs[i-1];
+  const b=document.getElementById("h"+i);
+  b.classList.toggle("on", htrs[i-1]);
+  b.querySelector(".st").textContent = htrs[i-1] ? "ON" : "OFF";
+  beep(htrs[i-1]?560:440,0.09,"square",0.12); vibrate(24);
+}
+
+/* ================== 렌더링 ================== */
+function updateControls(){
+  document.getElementById("valFlow").textContent=flow;
+  document.getElementById("valSpray").textContent=spray;
+  document.getElementById("flowBar").style.width=flow+"%";
+  document.getElementById("sprayBar").style.width=spray+"%";
+}
+function updateView(){
+  document.getElementById("valP").textContent=P.toFixed(1);
+  document.getElementById("valL").textContent=L.toFixed(1);
+  document.getElementById("valS").textContent=Math.max(0,Math.round(totalScore+roundScore)).toLocaleString();
+  updateControls();
+
+  const dP=Math.abs(P-TARGET_P), dL=Math.abs(L-TARGET_L);
+  const pAlarm=dP>cfg.bandP, lAlarm=dL>cfg.bandL;
+  document.getElementById("valP").style.color = pAlarm?"var(--alarm)":"var(--txt)";
+  document.getElementById("valL").style.color = lAlarm?"var(--alarm)":"var(--txt)";
+  document.getElementById("gaugeP").classList.toggle("alarm", pAlarm);
+  document.getElementById("gaugeL").classList.toggle("alarm", lAlarm);
+  updateNeedle("dialP", P, TARGET_P, 12);
+  updateNeedle("dialL", L, TARGET_L, 20);
+
+  // 콤보 칩
+  document.getElementById("comboVal").textContent="×"+comboMult.toFixed(1);
+  document.getElementById("comboFill").style.width=((combo%20)/20*100)+"%";
+  document.getElementById("comboChip").classList.toggle("hot", comboMult>=2);
+
+  // 어넌시에이터
+  const an=document.getElementById("annun"), at=document.getElementById("annunTxt");
+  if(pAlarm||lAlarm){
+    an.className="annun-status alarm";
+    at.textContent=(pAlarm&&lAlarm)?"압력·수위 밴드 초과":(pAlarm?"압력 밴드 초과":"수위 밴드 초과");
+  }else{
+    an.className="annun-status inband";
+    at.textContent = combo>=40 ? "안정 유지 · 우수 제어" : "계통 정상 · 밴드 유지";
+  }
+}
+
+/* --- SVG 다이얼 --- */
+const DIAL={cx:100,cy:104,r:74,sweep:116,tip:64};
+function polar(cx,cy,r,aDeg){ const a=aDeg*Math.PI/180; return {x:cx+r*Math.sin(a), y:cy-r*Math.cos(a)}; }
+function arcPath(cx,cy,r,a0,a1){
+  const p0=polar(cx,cy,r,a0), p1=polar(cx,cy,r,a1);
+  const large=(a1-a0)>180?1:0;
+  return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+}
+function buildDial(id){
+  const svg=document.getElementById(id); const {cx,cy,r,sweep}=DIAL;
+  const NS="http://www.w3.org/2000/svg";
+  svg.innerHTML="";
+  const mk=(tag,attrs)=>{ const el=document.createElementNS(NS,tag); for(const k in attrs) el.setAttribute(k,attrs[k]); return el; };
+  // 트랙
+  svg.appendChild(mk("path",{d:arcPath(cx,cy,r,-sweep,sweep),stroke:"#26334d","stroke-width":9,"stroke-linecap":"round",fill:"none"}));
+  // 경보 존(양끝) — 밴드 밖 표시. 밴드각은 레벨에 따라 갱신되므로 여기선 넓게 표시
+  svg.appendChild(mk("path",{class:"zoneL",d:arcPath(cx,cy,r,-sweep,-sweep+18),stroke:"rgba(255,61,85,.35)","stroke-width":9,"stroke-linecap":"round",fill:"none"}));
+  svg.appendChild(mk("path",{class:"zoneR",d:arcPath(cx,cy,r,sweep-18,sweep),stroke:"rgba(255,61,85,.35)","stroke-width":9,"stroke-linecap":"round",fill:"none"}));
+  // 목표 밴드(초기 임시) — 갱신됨
+  svg.appendChild(mk("path",{class:"band",d:arcPath(cx,cy,r,-24,24),stroke:"rgba(34,227,154,.55)","stroke-width":9,"stroke-linecap":"round",fill:"none"}));
+  // 눈금
+  [-sweep,-sweep/2,0,sweep/2,sweep].forEach(a=>{
+    const p1=polar(cx,cy,r-2,a), p2=polar(cx,cy,r-11,a);
+    svg.appendChild(mk("line",{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,stroke:"#3a4a68","stroke-width":2}));
+  });
+  // 니들
+  const needle=mk("line",{class:"needle",x1:cx,y1:cy,x2:cx,y2:cy-DIAL.tip,stroke:"#e9eef8","stroke-width":3.4,"stroke-linecap":"round"});
+  svg.appendChild(needle);
+  svg.appendChild(mk("circle",{cx:cx,cy:cy,r:6,fill:"#0e1626",stroke:"#3a4a68","stroke-width":2}));
+  svg.appendChild(mk("circle",{cx:cx,cy:cy,r:2.4,fill:"#e9eef8"}));
+}
+function updateNeedle(id, val, center, half){
+  const svg=document.getElementById(id); if(!svg) return;
+  const {cx,cy,r,sweep}=DIAL;
+  const dev=Math.max(-1,Math.min(1,(val-center)/half));
+  const ang=dev*sweep;
+  const needle=svg.querySelector(".needle");
+  if(needle) needle.setAttribute("transform",`rotate(${ang.toFixed(2)} ${cx} ${cy})`);
+  // 목표 밴드 각도 갱신 (레벨 밴드 반영)
+  const isP = id==="dialP";
+  const band = isP ? cfg.bandP : cfg.bandL;
+  const bAng = Math.min(sweep, band/half*sweep);
+  const bandEl=svg.querySelector(".band");
+  if(bandEl) bandEl.setAttribute("d", arcPath(cx,cy,r,-bAng,bAng));
+  // 니들 색
+  const out = Math.abs(val-center)>band;
+  if(needle) needle.setAttribute("stroke", out?"#ff3d55":(isP?"#ff9042":"#35d0ff"));
+}
+
+/* --- 트렌드 레코더 --- */
+const canvas=document.getElementById("trendCanvas");
+const tctx=canvas.getContext("2d");
+let historyData=[];
+function resizeCanvas(){
+  const dpr=window.devicePixelRatio||1;
+  const w=canvas.offsetWidth, h=canvas.offsetHeight;
+  if(w>0&&h>0){ canvas.width=w*dpr; canvas.height=h*dpr; tctx.setTransform(dpr,0,0,dpr,0,0); }
+}
+function drawTrend(){
+  const w=canvas.offsetWidth, h=canvas.offsetHeight; if(w<=0) return;
+
+  // 새 표본(밴드 기준 정규화) 기록
+  historyData.push({p:(P-TARGET_P)/cfg.bandP, l:(L-TARGET_L)/cfg.bandL});
+  if(historyData.length>300) historyData.shift();
+
+  // 자동 축척: 창 내 최대 편차를 모두 담도록(최소 1.6배, 12% 여유). 급변 후 서서히 복귀.
+  let peak=1.6;
+  for(const d of historyData){ const m=Math.max(Math.abs(d.p),Math.abs(d.l)); if(m>peak) peak=m; }
+  peak*=1.12;
+  const k = peak>trendScale ? 0.25 : 0.04;   // 빠른 확장 / 느린 축소 → 급변 시 잘림 방지
+  trendScale += (peak-trendScale)*k;
+  const scale=trendScale;
+
+  const mid=h/2, half=h*0.44;
+  const Y=v=>mid - Math.max(-scale*1.06,Math.min(scale*1.06,v))/scale*half;
+
+  tctx.clearRect(0,0,w,h);
+  // 밴드(±1) 영역
+  tctx.fillStyle="rgba(34,227,154,.08)";
+  tctx.fillRect(0, Y(1), w, Y(-1)-Y(1));
+  // 세로 시간 그리드
+  tctx.strokeStyle="#111a2b"; tctx.lineWidth=1;
+  for(let gx=1;gx<6;gx++){ const x=w*gx/6; tctx.beginPath(); tctx.moveTo(x,0); tctx.lineTo(x,h); tctx.stroke(); }
+  // 가로 밴드-배수 그리드 + 라벨(축이 스윙에 맞춰 자동 확장)
+  tctx.textBaseline="middle"; tctx.font="9px 'IBM Plex Mono',monospace";
+  const maxK=Math.min(9,Math.ceil(scale));
+  for(let k=1;k<=maxK;k++){
+    for(const v of [k,-k]){
+      const y=Y(v); if(y<8||y>h-8) continue;
+      tctx.strokeStyle = (k===1)?"rgba(34,227,154,.35)":"#182338";
+      tctx.setLineDash(k===1?[5,4]:[]);
+      tctx.beginPath(); tctx.moveTo(0,y); tctx.lineTo(w,y); tctx.stroke();
+      tctx.setLineDash([]);
+      tctx.fillStyle = (k===1)?"rgba(34,227,154,.7)":"#3a4a68";
+      tctx.fillText((v>0?"+":"")+v, 4, y);
+    }
+  }
+  // 중심선
+  tctx.strokeStyle="#2a3a58"; tctx.beginPath(); tctx.moveTo(0,mid); tctx.lineTo(w,mid); tctx.stroke();
+
+  if(historyData.length<2) return;
+  const N=300;
+  const drawTrace=(key,color)=>{
+    tctx.strokeStyle=color; tctx.lineWidth=2.4; tctx.lineJoin="round"; tctx.beginPath();
+    historyData.forEach((d,i)=>{ const x=(i/N)*w, y=Y(d[key]); i===0?tctx.moveTo(x,y):tctx.lineTo(x,y); });
+    tctx.stroke();
+    const last=historyData[historyData.length-1];
+    const lx=((historyData.length-1)/N)*w, ly=Y(last[key]);
+    tctx.fillStyle=color; tctx.beginPath(); tctx.arc(lx,ly,3,0,7); tctx.fill();
+  };
+  drawTrace("p","#ff9042");
+  drawTrace("l","#35d0ff");
+}
+
+/* ================== 피드백(팝업/토스트) ================== */
+function spawnPop(text,color){
+  const fx=document.getElementById("fx"); const el=document.createElement("div");
+  el.className="pop"; el.textContent=text; el.style.color=color;
+  el.style.left=(38+Math.random()*24)+"%"; el.style.top=(42+Math.random()*10)+"%";
+  fx.appendChild(el); setTimeout(()=>el.remove(),1000);
+}
+function achievement(text){
+  const fx=document.getElementById("fx"); const el=document.createElement("div");
+  el.className="toast"; el.textContent=text;
+  fx.appendChild(el); beep(1046,0.12,"triangle",0.16); vibrate([20,40,20]);
+  setTimeout(()=>el.remove(),2400);
+}
+
+/* ================== 레벨/최종 종료 ================== */
+function computeStars(pct){ return pct>=0.85?3 : pct>=0.6?2 : 1; }
+function starStr(n){ return "★★★☆☆☆".slice(3-n,6-n); }
+function gradeStr(pct,stars){ if(stars===3&&pct>=0.92) return "S"; if(stars===3) return "A"; if(stars===2) return "B"; return "C"; }
+
+function endLevel(){
+  clearInterval(simTimer); running=false; setFlash(false);
+  window.removeEventListener("resize", resizeCanvas);
+  const pct = totalTicks? inBandTicks/totalTicks : 0;
+  const stars = computeStars(pct);
+  const grade = gradeStr(pct, stars);
+  // 보너스
+  let bonus=0, notes=[];
+  if(alarmCount===0){ bonus+=1000; notes.push("무경보 +1000"); if(!unlockedAchv.noalarm){ unlockedAchv.noalarm=true; } }
+  if(pct>=0.85){ bonus+=Math.round((pct-0.85)*4000); notes.push("고유지율 +"+Math.round((pct-0.85)*4000)); }
+  const lvScore=Math.max(0,Math.round(roundScore)+bonus);
+  totalScore+=lvScore;
+  levelResults.push({stars, pct, grade, alarmCount, maxDevP, maxDevL, score:lvScore});
+
+  document.getElementById("lvrTag").textContent=`LEVEL ${cfg.id} ${pct>=0.6?"CLEAR":"완료"}`;
+  document.getElementById("lvrGrade").textContent=grade;
+  document.getElementById("lvrGrade").style.color = grade==="S"?"var(--gold)":grade==="A"?"var(--good)":grade==="B"?"var(--water)":"var(--muted)";
+  document.getElementById("lvrStars").textContent=starStr(stars);
+  document.getElementById("lvrScore").textContent="+"+lvScore.toLocaleString();
+  document.getElementById("lvrDetail").innerHTML=
+    `밴드 유지율 <b class="mono">${(pct*100).toFixed(0)}%</b> · 경보 <b class="mono">${alarmCount}</b>회<br>`+
+    `최대편차 압력 <b class="mono">${maxDevP.toFixed(1)}</b> · 수위 <b class="mono">${maxDevL.toFixed(1)}</b>`+
+    (notes.length?`<br><span style="color:var(--gold);font-size:12px;">${notes.join(" · ")}</span>`:"");
+  document.getElementById("lvrNext").textContent = (lvIndex<LEVELS.length-1)?"다음 레벨":"최종 평가";
+  hide("app"); beep(660,0.12,"triangle",0.16); beep(880,0.16,"triangle",0.14); vibrate([30,50,30]);
+  show("lvResultScreen");
+}
+
+function nextLevel(){
+  hide("lvResultScreen");
+  if(lvIndex<LEVELS.length-1){ lvIndex++; showLevelIntro(); }
+  else finishGame();
+}
+
+async function finishGame(){
+  const avgStars = levelResults.reduce((s,r)=>s+r.stars,0)/levelResults.length;
+  const totalStars = levelResults.reduce((s,r)=>s+r.stars,0);
+  const allNoAlarm = levelResults.every(r=>r.alarmCount===0);
+  const all3 = levelResults.every(r=>r.stars===3);
+  document.getElementById("finStars").textContent = "★".repeat(Math.round(avgStars))+"☆".repeat(3-Math.round(avgStars));
+  document.getElementById("finalScore").textContent=totalScore.toLocaleString();
+  let msg;
+  if(all3) msg="최우수 — 3개 레벨 전 구간 완벽 제어. 유출·유입 서지 대응이 교범 수준입니다.";
+  else if(totalStars>=7) msg="우수 — 안정적인 밴드 유지 능력을 보여주셨습니다. 급속 과도 시 미세 편차만 보완하면 완벽합니다.";
+  else if(totalStars>=5) msg="양호 — 계통을 안정화하였으나 과도 초기 대응 속도에 개선 여지가 있습니다.";
+  else msg="보완 필요 — 서지 방향(전열기/살수, 충전 증감) 판단을 재점검하고 반복 훈련을 권장합니다.";
+  document.getElementById("evalMsg").textContent=msg;
+
+  window.__myTs=Date.now();
+  const entry={name:userName, score:totalScore, level:LEVELS.length, stars:totalStars, ts:window.__myTs};
+  hide("lvResultScreen"); show("finalScreen");
+  beep(784,0.14,"triangle",0.16); beep(1046,0.2,"triangle",0.14); vibrate([40,60,40,60,80]);
+  if(all3) setTimeout(()=>achievement("👑 PERFECT MASTER · 전 레벨 3★"),400);
+
+  await submitScore(entry);
+  const list=await fetchBoard();
+  renderBoard(list, document.getElementById("boardBody"), document.getElementById("boardMode"));
+}
+</script>
+</body>
+</html>
