@@ -30,11 +30,11 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 
-/* 1번 해법 적용: 100vh 대신 100dvh를 사용하여 브라우저 UI 변화에 실시간 대응 */
+/* 100dvh 기준 레이아웃은 유지하되, 내용이 화면을 넘칠 때 스크롤 허용 */
+html{-webkit-text-size-adjust:100%;}
 html,body{
-  height:100%;
-  height:100dvh; 
-  overflow:hidden;
+  min-height:100%;
+  min-height:100dvh;
 }
 body{
   background:
@@ -42,18 +42,24 @@ body{
     var(--bg);
   color:var(--txt);
   font-family:"Pretendard",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
-  width:100vw;
+  width:100%;
   display:flex;flex-direction:column;
+  overflow-x:hidden;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
   -webkit-font-smoothing:antialiased;
 }
 .mono{font-family:"IBM Plex Mono","SFMono-Regular",monospace;font-variant-numeric:tabular-nums;}
 .up{color:var(--heat);} .dn{color:var(--water);}
 
 /* ---------- 오버레이(로그인/레벨/결과/랭킹) ---------- */
-.overlay{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;
-  justify-content:center;align-items:center;padding:26px;text-align:center;
+.overlay{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;
+  justify-content:flex-start;align-items:center;padding:26px;text-align:center;
   background:radial-gradient(900px 500px at 50% 0%, #14243f 0%, var(--bg) 70%);
-  overflow-y:auto;}
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;touch-action:pan-y;}
+/* 위·아래 신축 여백: 내용이 짧으면 중앙 정렬, 길면 위에서부터 스크롤(상단 잘림 방지) */
+.overlay::before,.overlay::after{content:"";flex:1 0 0;min-height:0;}
 .eyebrow{font-size:11px;letter-spacing:.32em;color:var(--dim);font-weight:700;margin-bottom:14px;}
 .overlay h1{font-size:27px;font-weight:800;line-height:1.25;letter-spacing:-.01em;margin-bottom:8px;}
 .overlay h1 .accent{color:var(--heat);}
@@ -94,7 +100,7 @@ body{
 .board{width:100%;max-width:360px;margin:18px 0;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;}
 .board-head{padding:11px 16px;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.05em;
   border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
-.board-row{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:10px 16px;
+.board-row{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:center;padding:10px 16px;
   font-size:13px;border-bottom:1px solid rgba(39,54,80,.5);}
 .board-row:last-child{border-bottom:none;}
 .board-row .rk{font-family:"IBM Plex Mono",monospace;font-weight:700;color:var(--dim);text-align:center;}
@@ -102,14 +108,36 @@ body{
 .board-row.me .nm{color:var(--heat);font-weight:800;}
 .board-row .rk.g1{color:#ffd23f;} .board-row .rk.g2{color:#cfd8e6;} .board-row .rk.g3{color:#e0a878;}
 .board-row .sc{font-family:"IBM Plex Mono",monospace;font-weight:700;color:var(--gold);}
-.board-empty{padding:22px 16px;font-size:12.5px;color:var(--dim);}
+.board-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
+.board-row .sub{color:var(--dim);font-size:11px;font-weight:600;}
+.board-empty{padding:22px 16px;font-size:12.5px;color:var(--dim);line-height:1.6;}
+
+/* 기간 필터 탭 */
+.board-tabs{display:flex;gap:6px;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);}
+.tab{flex:1;padding:8px 6px;font-size:12px;font-weight:700;border-radius:9px;cursor:pointer;
+  border:1px solid transparent;background:transparent;color:var(--muted);transition:all .15s;
+  font-family:inherit;}
+.tab:active{transform:scale(.97);}
+.tab.on{background:var(--raise);border-color:var(--line);color:var(--heat);}
+.tab.icon{flex:0 0 auto;padding:8px 12px;font-size:14px;}
+
+/* 순위 목록 스크롤 영역 (최대 100위) */
+.board-body{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;}
+#boardBody{max-height:42vh;}
+#boardBody2{max-height:58vh;}
+.board-body::-webkit-scrollbar{width:6px;}
+.board-body::-webkit-scrollbar-track{background:transparent;}
+.board-body::-webkit-scrollbar-thumb{background:var(--raise);border-radius:3px;}
+.board-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:9px 16px;border-top:1px solid var(--line);background:var(--panel-2);
+  font-size:11.5px;color:var(--dim);}
+.board-foot:empty{display:none;}
 
 /* ---------- 메인 앱 ---------- */
 #app{
   display:none;
   flex-direction:column;
-  height:100%;
-  height:100dvh; /* 앱 전체 영역을 동적 뷰포트에 맞춤 */
+  min-height:100dvh; /* 동적 뷰포트에 맞추되, 부족하면 늘어나 스크롤 가능 */
   width:100%;
 }
 .hud{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -212,7 +240,7 @@ canvas{width:100%;height:100%;display:block;}
 .slider.c > i{background:var(--water);} .slider.s > i{background:var(--heat);}
 
 /* 이벤트 모달 */
-.modal{position:absolute;inset:0;z-index:200;display:none;justify-content:center;align-items:center;padding:24px;
+.modal{position:fixed;inset:0;z-index:200;display:none;justify-content:center;align-items:center;padding:24px;
   background:rgba(5,8,15,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
 .modal-box{width:100%;max-width:340px;background:linear-gradient(180deg,#1a2438,#121a2b);
   border:1px solid var(--alarm);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:var(--shadow);
@@ -228,7 +256,7 @@ canvas{width:100%;height:100%;display:block;}
 .modal-btn:active{transform:scale(.97);}
 
 /* 플로팅 피드백(점수 팝업 / 토스트) */
-#fx{position:absolute;inset:0;z-index:150;pointer-events:none;overflow:hidden;}
+#fx{position:fixed;inset:0;z-index:150;pointer-events:none;overflow:hidden;}
 .pop{position:absolute;font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:15px;
   animation:floatUp 1s ease-out forwards;text-shadow:0 2px 6px rgba(0,0,0,.6);}
 @keyframes floatUp{0%{opacity:0;transform:translateY(6px) scale(.9);}15%{opacity:1;}100%{opacity:0;transform:translateY(-46px) scale(1.05);}}
@@ -240,7 +268,7 @@ canvas{width:100%;height:100%;display:block;}
 @keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-12px);}}
 
 /* 경보 화면 플래시 */
-#flash{position:absolute;inset:0;z-index:140;pointer-events:none;box-shadow:inset 0 0 0 3px var(--alarm), inset 0 0 60px rgba(255,61,85,.25);opacity:0;transition:opacity .25s;}
+#flash{position:fixed;inset:0;z-index:140;pointer-events:none;box-shadow:inset 0 0 0 3px var(--alarm), inset 0 0 60px rgba(255,61,85,.25);opacity:0;transition:opacity .25s;}
 #flash.on{opacity:1;}
 
 @media (prefers-reduced-motion: reduce){
@@ -248,6 +276,7 @@ canvas{width:100%;height:100%;display:block;}
 }
 @media (max-height:680px){
   .rd-val{font-size:26px;} .final-score{font-size:46px;}
+  #boardBody{max-height:34vh;} #boardBody2{max-height:50vh;}
 }
 </style>
 </head>
@@ -299,7 +328,12 @@ canvas{width:100%;height:100%;display:block;}
   <div class="eval" id="evalMsg"></div>
   <div class="board" id="boardWrap">
     <div class="board-head"><span>🏆 리더보드</span><span id="boardMode" style="font-weight:600;color:var(--dim);"></span></div>
-    <div id="boardBody"><div class="board-empty">불러오는 중…</div></div>
+    <div class="board-tabs">
+      <button class="tab on" id="tabAll1" onclick="setBoardScope('final','all')">전체 기간</button>
+      <button class="tab" id="tabToday1" onclick="setBoardScope('final','today')">오늘</button>
+    </div>
+    <div class="board-body" id="boardBody"><div class="board-empty">불러오는 중…</div></div>
+    <div class="board-foot" id="boardFoot"></div>
   </div>
   <button class="btn-primary" onclick="location.reload()">다시 도전</button>
 </div>
@@ -309,7 +343,13 @@ canvas{width:100%;height:100%;display:block;}
   <h1 style="font-size:22px;margin-bottom:18px;">🏆 전체 순위</h1>
   <div class="board" id="boardWrap2">
     <div class="board-head"><span>순위</span><span id="boardMode2" style="font-weight:600;color:var(--dim);"></span></div>
-    <div id="boardBody2"><div class="board-empty">불러오는 중…</div></div>
+    <div class="board-tabs">
+      <button class="tab on" id="tabAll2" onclick="setBoardScope('only','all')">전체 기간</button>
+      <button class="tab" id="tabToday2" onclick="setBoardScope('only','today')">오늘</button>
+      <button class="tab icon" onclick="refreshBoard()" title="새로 불러오기">↻</button>
+    </div>
+    <div class="board-body" id="boardBody2"><div class="board-empty">불러오는 중…</div></div>
+    <div class="board-foot" id="boardFoot2"></div>
   </div>
   <button class="btn-ghost" onclick="location.reload()">뒤로</button>
 </div>
@@ -474,33 +514,111 @@ let noiseP=0, noiseL=0, surgeP=0, surgeL=0, trendScale=2;
   else{ dot.className="dot off"; txt.textContent="오프라인 · 세션 순위만 기록"; }
 })();
 
+const MAX_RANK = 100;     // 화면에 표시하는 최대 순위
+const FETCH_LIMIT = 400;  // 서버에서 한 번에 가져오는 최대 레코드 수
+
+let boardRaw = [];                          // 병합·정렬된 원본 기록
+let boardScope = { final:"all", only:"all" }; // 화면별 기간 필터 상태
+const BOARD_EL = {
+  final:{ body:"boardBody",  mode:"boardMode",  foot:"boardFoot",  all:"tabAll1", today:"tabToday1" },
+  only :{ body:"boardBody2", mode:"boardMode2", foot:"boardFoot2", all:"tabAll2", today:"tabToday2" }
+};
+
 async function submitScore(entry){
   if(ONLINE && db){ try{ await db.ref(LB_PATH).push(entry); }catch(e){ ONLINE=false; } }
   localBoard.push(entry);
 }
+
+/* 점수 상위 기록과 최근 기록을 함께 받아 병합.
+   오늘 기록이 점수 상위권 밖에 있어도 '오늘' 필터에서 누락되지 않는다. */
 async function fetchBoard(){
+  const merged=new Map();
+  const add=o=>{
+    if(!o || typeof o.score!=="number") return;
+    merged.set(`${o.name||""}|${o.score}|${o.ts||0}`, o);
+  };
   if(ONLINE && db){
     try{
-      const snap=await db.ref(LB_PATH).orderByChild("score").limitToLast(40).once("value");
-      const arr=[]; snap.forEach(c=>{ arr.push(c.val()); });
-      arr.sort((a,b)=>b.score-a.score);
-      return arr.slice(0,15);
+      const [byScore, byTs] = await Promise.all([
+        db.ref(LB_PATH).orderByChild("score").limitToLast(FETCH_LIMIT).once("value"),
+        db.ref(LB_PATH).orderByChild("ts").limitToLast(FETCH_LIMIT).once("value")
+      ]);
+      byScore.forEach(c=>{ add(c.val()); });
+      byTs.forEach(c=>{ add(c.val()); });
     }catch(e){ ONLINE=false; }
   }
-  return [...localBoard].sort((a,b)=>b.score-a.score).slice(0,15);
+  localBoard.forEach(add);
+  boardRaw=[...merged.values()];
+  boardRaw.sort((a,b)=> (b.score-a.score) || ((a.ts||0)-(b.ts||0)));
+  return boardRaw;
 }
-function renderBoard(list, bodyEl, modeEl){
-  modeEl.textContent = ONLINE ? "ONLINE" : "SESSION";
-  if(!list.length){ bodyEl.innerHTML='<div class="board-empty">아직 기록이 없습니다. 첫 기록의 주인공이 되어 보십시오.</div>'; return; }
-  bodyEl.innerHTML = list.map((e,i)=>{
+
+/* 기기 로컬 시간 기준 '오늘' 판정 (ts 없는 과거 기록은 제외) */
+function isToday(ts){
+  if(!ts) return false;
+  const d=new Date(ts), n=new Date();
+  return d.getFullYear()===n.getFullYear() && d.getMonth()===n.getMonth() && d.getDate()===n.getDate();
+}
+function hhmm(ts){
+  const d=new Date(ts);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function mmdd(ts){
+  const d=new Date(ts);
+  return (d.getMonth()+1)+"/"+d.getDate();
+}
+
+function setBoardScope(target, scope){
+  boardScope[target]=scope;
+  beep(720,0.04,"sine",0.09); vibrate(12);
+  renderBoard(target);
+}
+
+function renderBoard(target){
+  const ref=BOARD_EL[target];
+  const bodyEl=document.getElementById(ref.body);
+  const modeEl=document.getElementById(ref.mode);
+  const footEl=document.getElementById(ref.foot);
+  const scope=boardScope[target];
+  const today=scope==="today";
+
+  document.getElementById(ref.all).classList.toggle("on", !today);
+  document.getElementById(ref.today).classList.toggle("on", today);
+
+  const list = today ? boardRaw.filter(e=>isToday(e.ts)) : boardRaw;
+  modeEl.textContent = `${ONLINE?"ONLINE":"SESSION"} · ${list.length}건`;
+
+  if(!list.length){
+    bodyEl.innerHTML = today
+      ? '<div class="board-empty">오늘 등록된 기록이 아직 없습니다.<br>전체 기간 탭에서 누적 순위를 확인하실 수 있습니다.</div>'
+      : '<div class="board-empty">아직 기록이 없습니다. 첫 기록의 주인공이 되어 보십시오.</div>';
+    footEl.innerHTML="";
+    return;
+  }
+
+  const isMe=e=>(e.name===userName && e.ts===window.__myTs);
+  const shown=list.slice(0,MAX_RANK);
+  bodyEl.innerHTML = shown.map((e,i)=>{
     const rk=i+1, g=rk<=3?("g"+rk):"";
-    const me=(e.name===userName && e.ts===window.__myTs)?"me":"";
     const nm=(e.name||"익명").replace(/[<>&]/g,"");
-    return `<div class="board-row ${me}">
+    const meta = e.ts ? (today?hhmm(e.ts):mmdd(e.ts)) : "";
+    return `<div class="board-row ${isMe(e)?"me":""}">
       <span class="rk ${g}">${rk<=3?["🥇","🥈","🥉"][rk-1]:rk}</span>
-      <span class="nm">${nm} <span style="color:var(--dim);font-size:11px;">L${e.level||1}</span></span>
+      <span class="nm">${nm} <span class="sub">L${e.level||1}${meta?" · "+meta:""}</span></span>
       <span class="sc">${(e.score||0).toLocaleString()}</span></div>`;
   }).join("");
+  bodyEl.scrollTop=0;
+
+  const myIdx=list.findIndex(isMe);
+  const parts=[`<span>${shown.length}명 표시${list.length>MAX_RANK?` · 전체 ${list.length}명 중 상위 ${MAX_RANK}위`:""}</span>`];
+  if(myIdx>=0) parts.push(`<span style="color:var(--heat);font-weight:800;">내 순위 ${myIdx+1}위</span>`);
+  footEl.innerHTML=parts.join("");
+}
+
+async function refreshBoard(){
+  document.getElementById("boardBody2").innerHTML='<div class="board-empty">불러오는 중…</div>';
+  await fetchBoard();
+  renderBoard("only");
 }
 
 /* ================== 오디오 / 햅틱 ================== */
@@ -534,9 +652,10 @@ function startGame(){
 }
 
 async function showBoardOnly(){
+  initAudio();
   hide("loginScreen"); show("boardOnlyScreen");
-  const list=await fetchBoard();
-  renderBoard(list, document.getElementById("boardBody2"), document.getElementById("boardMode2"));
+  await fetchBoard();
+  renderBoard("only");
 }
 
 function showLevelIntro(){
@@ -902,8 +1021,8 @@ async function finishGame(){
   if(all3) setTimeout(()=>achievement("👑 PERFECT MASTER · 전 레벨 3★"),400);
 
   await submitScore(entry);
-  const list=await fetchBoard();
-  renderBoard(list, document.getElementById("boardBody"), document.getElementById("boardMode"));
+  await fetchBoard();
+  renderBoard("final");
 }
 </script>
 </body>
